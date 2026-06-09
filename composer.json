@@ -1,0 +1,95 @@
+{
+    "name": "bounteous-inc/composer-darn",
+    "description": "A Composer plugin to easily apply patches to your project.",
+    "license": "MIT",
+    "type": "composer-plugin",
+    "keywords": [
+        "composer",
+        "composer-plugin",
+        "drupal",
+        "github",
+        "patch",
+        "patches"
+    ],
+    "authors": [
+        {
+            "name": "Bounteous",
+            "homepage": "https://www.bounteous.com"
+        },
+        {
+            "name": "Andy Carlberg",
+            "email": "andycarlberg@users.noreply.github.com",
+            "role": "Original Author"
+        }
+    ],
+    "require": {
+        "php": ">=8.2",
+        "composer-plugin-api": "^2.0",
+        "guzzlehttp/guzzle": "^7.0"
+    },
+    "require-dev": {
+        "composer/composer": "^2.0",
+        "cweagans/composer-patches": "^2.0",
+        "ergebnis/composer-normalize": "^2.49",
+        "laravel/pint": "^1.27",
+        "pestphp/pest": "^3.8",
+        "php-parallel-lint/php-parallel-lint": "^1.4",
+        "phpro/grumphp": "^2.19",
+        "phpstan/extension-installer": "^1.4",
+        "phpstan/phpstan": "^2.1",
+        "phpstan/phpstan-deprecation-rules": "^2.0",
+        "phpstan/phpstan-phpunit": "^2.0",
+        "phpstan/phpstan-strict-rules": "^2.0",
+        "yieldstudio/grumphp-laravel-pint": "^1.0"
+    },
+    "suggest": {
+        "cweagans/composer-patches": "Required to apply the downloaded patches."
+    },
+    "autoload": {
+        "psr-4": {
+            "Bounteous\\Darn\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Tests\\": "tests/"
+        }
+    },
+    "config": {
+        "allow-plugins": {
+            "cweagans/composer-patches": true,
+            "ergebnis/composer-normalize": true,
+            "pestphp/pest-plugin": true,
+            "phpro/grumphp": true,
+            "phpstan/extension-installer": true
+        },
+        "sort-packages": true
+    },
+    "extra": {
+        "class": "Bounteous\\Darn\\Plugin",
+        "composer-normalize": {
+            "indent-size": 4,
+            "indent-style": "space"
+        }
+    },
+    "scripts": {
+        "analyze": "phpstan analyze --memory-limit=-1",
+        "check": [
+            "@lint",
+            "@analyze",
+            "@test"
+        ],
+        "coverage-check": "pest --coverage --min=80",
+        "fix": "pint",
+        "lint": "pint --test",
+        "test": "pest"
+    },
+    "scripts-descriptions": {
+        "analyze": "Run PHPStan static analysis.",
+        "check": "Run all quality checks: lint, static analysis, and tests.",
+        "coverage-check": "Run tests and enforce 80% code coverage minimum.",
+        "fix": "Auto-fix code style with Laravel Pint.",
+        "lint": "Check code style with Laravel Pint (no fixes applied).",
+        "test": "Run the full test suite."
+    }
+}

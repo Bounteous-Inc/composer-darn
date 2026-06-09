@@ -1,0 +1,10 @@
+# tests/ is intentionally excluded: phpstan-strict-rules and phpstan-phpunit
+# (see composer.json require-dev) flag hundreds of findings in Pest test
+# closures (protected-method calls, dynamic $this properties, deprecated APIs
+# used only in test doubles) that aren't real bugs worth suppressing individually.
+parameters:
+    level: 8
+    paths:
+        - src
+    excludePaths:
+        - vendor

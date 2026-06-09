@@ -1,0 +1,137 @@
+name: Release
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    if: github.event.workflow_run.conclusion == 'success'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      # Determine whether the commit just pushed to main came from merging a
+      # release/X.Y.Z PR. Checked via the GitHub API (which PR(s), if any, are
+      # associated with this commit and already merged) rather than parsing the
+      # merge commit's subject line — subject text depends on which merge
+      # strategy (merge commit / squash / rebase) was used, so it's not a
+      # reliable signal on its own.
+      - name: Check if this is a release commit
+        id: subject
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          SHA=$(git rev-parse HEAD)
+          RELEASE_REF=$(gh api "repos/${{ github.repository }}/commits/${SHA}/pulls" \
+            --jq '.[] | select(.merged_at != null) | .head.ref' \
+            | grep -E '^release/' | head -n1 || true)
+
+          if [ -n "$RELEASE_REF" ]; then
+            echo "is_release=true" >> "$GITHUB_OUTPUT"
+            echo "version=${RELEASE_REF#release/}" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_release=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Merging a release/X.Y.Z PR: tag the release commit. No changelog changes.
+      - name: Tag release
+        if: steps.subject.outputs.is_release == 'true'
+        run: |
+          VERSION="${{ steps.subject.outputs.version }}"
+          echo "Tagging v${VERSION}"
+          git tag "v${VERSION}"
+          git push origin "v${VERSION}"
+
+      # Any other merge to main: prepare (or refresh) a release/X.Y.Z PR.
+      # Note: `content` is populated by reading back the file at $OUTPUT (default
+      # git-cliff/CHANGELOG.md) — do NOT redirect OUTPUT to /dev/null, or content
+      # comes back empty.
+      - name: Determine next version
+        if: steps.subject.outputs.is_release == 'false'
+        id: next-version
+        uses: orhun/git-cliff-action@v4
+        with:
+          args: --bumped-version
+
+      - name: Compute version strings
+        if: steps.subject.outputs.is_release == 'false'
+        id: version
+        run: |
+          RAW=$(echo "${{ steps.next-version.outputs.content }}" | tr -d '[:space:]')
+          NEXT_VERSION="${RAW#v}"
+          LATEST_TAG=$(git tag --sort=-v:refname | head -n1 || true)
+          LATEST_VERSION="${LATEST_TAG#v}"
+
+          echo "value=${NEXT_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=v${NEXT_VERSION}" >> "$GITHUB_OUTPUT"
+
+          # No conventional commits since the last tag bump the version (e.g. a
+          # merge of only chore/docs commits) — nothing to release, skip.
+          if [ -n "$LATEST_VERSION" ] && [ "$NEXT_VERSION" = "$LATEST_VERSION" ]; then
+            echo "Nothing to release: bumped version (${NEXT_VERSION}) matches latest tag (${LATEST_TAG})."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Prepare release branch and PR
+        if: steps.subject.outputs.is_release == 'false' && steps.version.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          NEXT_VERSION="${{ steps.version.outputs.value }}"
+          echo "Preparing release ${NEXT_VERSION}"
+
+          if git ls-remote --heads origin "release/${NEXT_VERSION}" | grep -q .; then
+            BRANCH_IS_NEW=false
+          else
+            BRANCH_IS_NEW=true
+          fi
+
+          git checkout -b "release/${NEXT_VERSION}"
+
+      - name: Generate changelog
+        if: steps.subject.outputs.is_release == 'false' && steps.version.outputs.changed == 'true'
+        id: changelog
+        uses: orhun/git-cliff-action@v4
+        with:
+          args: --tag ${{ steps.version.outputs.tag }}
+        env:
+          OUTPUT: CHANGELOG.md
+
+      - name: Commit and push release branch
+        if: steps.subject.outputs.is_release == 'false' && steps.version.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          NEXT_VERSION="${{ steps.version.outputs.value }}"
+
+          git add CHANGELOG.md
+          git commit -m "chore(release): ${NEXT_VERSION}"
+          git push --force origin "release/${NEXT_VERSION}"
+
+          if ! gh pr view "release/${NEXT_VERSION}" >/dev/null 2>&1; then
+            gh pr create \
+              --title "chore(release): ${NEXT_VERSION}" \
+              --base main \
+              --head "release/${NEXT_VERSION}" \
+              --body "Review CHANGELOG.md before merging. This workflow will push the version tag automatically when this PR merges."
+          fi

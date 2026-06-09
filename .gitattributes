@@ -1,0 +1,37 @@
+# Normalize line endings to LF for all text files.
+* text=auto eol=lf
+
+# PHP source files — enable PHP-aware diffs.
+*.php     text eol=lf diff=php
+
+# Binary files — do not treat as text; include binary diff in patches.
+*.gif     -text diff
+*.gz      -text diff
+*.ico     -text diff
+*.jpeg    -text diff
+*.jpg     -text diff
+*.otf     -text diff
+*.phar    -text diff
+*.png     -text diff
+*.ttf     -text diff
+*.woff    -text diff
+*.woff2   -text diff
+
+# Exclude development files from dist archives (e.g. composer archive).
+/bin/                       export-ignore
+/.editorconfig              export-ignore
+/.gitattributes             export-ignore
+/.github/                   export-ignore
+/.gitignore                 export-ignore
+/CHANGELOG.md               export-ignore
+/cliff.toml                 export-ignore
+/CODE_OF_CONDUCT.md         export-ignore
+/CONTRIBUTING.md            export-ignore
+/doc/                       export-ignore
+/grumphp.yml                export-ignore
+/phpstan.neon               export-ignore
+/phpunit.xml.dist           export-ignore
+/pint.json                  export-ignore
+/scripts/                   export-ignore
+/SECURITY.md                export-ignore
+/tests/                     export-ignore

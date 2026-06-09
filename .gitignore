@@ -1,0 +1,14 @@
+composer.lock
+vendor/
+patches/
+patches.lock.json
+build/
+
+# PHPUnit
+.phpunit.cache/
+
+# PHPStan
+phpstan.neon.local
+
+# macOS
+.DS_Store
