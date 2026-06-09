@@ -1,0 +1,64 @@
+grumphp:
+  extensions:
+    - YieldStudio\GrumPHPLaravelPint\ExtensionLoader
+  tasks:
+    # Validate composer.json is well-formed and in sync.
+    composer:
+      file: composer.json
+
+    # Enforce normalized composer.json formatting.
+    composer_normalize: ~
+
+    # Lint JSON files.
+    jsonlint:
+      detect_key_conflicts: true
+
+    # Lint PHP syntax quickly before the heavier passes.
+    phplint:
+      triggered_by: [php]
+
+    # Enforce Conventional Commits on the subject line.
+    # Format: <type>[optional scope]: <description>
+    # Types: feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert
+    # Also tolerates fixup!/squash!/amend! prefixes for WIP commits pre-rebase.
+    git_commit_message:
+      enforce_capitalized_subject: false
+      enforce_single_lined_subject: true
+      max_subject_width: 100
+      max_body_width: 0
+      multiline: false
+      matchers:
+        Conventional Commit: '/^(?:(?:fixup|squash|amend)! )?(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(?:\([^)]+\))?!?: \S/'
+
+    # Enforce PSR-12 code style via Laravel Pint.
+    laravel_pint:
+      config: pint.json
+
+    # Run static analysis, scoped to staged files for speed.
+    phpstan:
+      configuration: phpstan.neon
+      use_grumphp_paths: true
+      memory_limit: "-1"
+
+    # Run the fast unit suite. The full suite (incl. Integration/Acceptance)
+    # runs in CI via `composer test`.
+    pest:
+      config_file: phpunit.xml.dist
+      testsuite: Unit
+      always_execute: true
+
+    # Detect debug artifacts left in committed code.
+    git_blacklist:
+      keywords:
+        - '\bvar_dump\('
+        - '\bdd\('
+        - '(?<!::)\bdump\('
+        - '\bxdebug_break\('
+      regexp_type: P
+      triggered_by: [php]
+
+    # Lint YAML files.
+    yamllint:
+      whitelist_patterns:
+        - /^.*\.(yml|yaml)$/i
+      object_support: true
