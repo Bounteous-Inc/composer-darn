@@ -17,16 +17,24 @@ jobs:
     if: github.event.workflow_run.conclusion == 'success'
 
     steps:
+      - name: Generate release bot token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.RELEASE_BOT_APP_ID }}
+          private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
+
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           ref: main
           fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
 
       - name: Configure git
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "bounteous-release-bot[bot]"
+          git config user.email "bounteous-release-bot[bot]@users.noreply.github.com"
 
       # Determine whether the commit just pushed to main came from merging a
       # release/X.Y.Z PR. Checked via the GitHub API (which PR(s), if any, are
@@ -37,7 +45,7 @@ jobs:
       - name: Check if this is a release commit
         id: subject
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           SHA=$(git rev-parse HEAD)
           RELEASE_REF=$(gh api "repos/${{ github.repository }}/commits/${SHA}/pulls" \
@@ -95,7 +103,7 @@ jobs:
       - name: Prepare release branch and PR
         if: steps.subject.outputs.is_release == 'false' && steps.version.outputs.changed == 'true'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           NEXT_VERSION="${{ steps.version.outputs.value }}"
           echo "Preparing release ${NEXT_VERSION}"
@@ -117,21 +125,59 @@ jobs:
         env:
           OUTPUT: CHANGELOG.md
 
+      # The version bump is recomputed on every push to main, so it can change
+      # between runs (e.g. patch -> minor) while an earlier release/X.Y.Z PR is
+      # still open and unmerged. Find any such stale PR so it can be superseded
+      # instead of left open alongside the new one.
+      - name: Find pending release PR
+        if: steps.subject.outputs.is_release == 'false' && steps.version.outputs.changed == 'true'
+        id: pending
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          PENDING=$(gh pr list --repo "${{ github.repository }}" --state open \
+            --json number,headRefName \
+            --jq '.[] | select(.headRefName | test("^release/")) | "\(.number) \(.headRefName)"' \
+            | head -n1)
+
+          if [ -n "$PENDING" ]; then
+            echo "number=$(echo "$PENDING" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+            echo "branch=$(echo "$PENDING" | cut -d' ' -f2)" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Commit and push release branch
         if: steps.subject.outputs.is_release == 'false' && steps.version.outputs.changed == 'true'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           NEXT_VERSION="${{ steps.version.outputs.value }}"
+          TARGET_BRANCH="release/${NEXT_VERSION}"
+          PENDING_BRANCH="${{ steps.pending.outputs.branch }}"
+          PENDING_NUMBER="${{ steps.pending.outputs.number }}"
+
+          # A stale release PR for a different (now-superseded) version is
+          # still open: close it and drop its branch before creating the
+          # correct one, rather than leaving both open.
+          if [ -n "$PENDING_BRANCH" ] && [ "$PENDING_BRANCH" != "$TARGET_BRANCH" ]; then
+            echo "Superseding stale release PR #${PENDING_NUMBER} (${PENDING_BRANCH}) with ${TARGET_BRANCH}"
+            gh pr close "$PENDING_NUMBER" --repo "${{ github.repository }}" \
+              --comment "Superseded by \`${TARGET_BRANCH}\` — version recalculated after additional commits landed on main."
+            git push origin --delete "$PENDING_BRANCH" || true
+          fi
 
           git add CHANGELOG.md
           git commit -m "chore(release): ${NEXT_VERSION}"
-          git push --force origin "release/${NEXT_VERSION}"
+          git push --force origin "$TARGET_BRANCH"
 
-          if ! gh pr view "release/${NEXT_VERSION}" >/dev/null 2>&1; then
+          # `gh pr view` matches by branch name regardless of state, so a
+          # branch reused from a prior, now-closed release PR would look
+          # like it already has an open PR and silently skip creating one.
+          EXISTING_OPEN=$(gh pr list --repo "${{ github.repository }}" --state open \
+            --head "$TARGET_BRANCH" --json number --jq '.[0].number')
+          if [ -z "$EXISTING_OPEN" ]; then
             gh pr create \
               --title "chore(release): ${NEXT_VERSION}" \
               --base main \
-              --head "release/${NEXT_VERSION}" \
+              --head "$TARGET_BRANCH" \
               --body "Review CHANGELOG.md before merging. This workflow will push the version tag automatically when this PR merges."
           fi
